@@ -27,3 +27,20 @@ updated_at	timestamp(0) NULL
 location	geometry(Point,4326) NULL	
 external_id	character varying(255) NULL	
 
+
+# Commands used to create environment
+```
+python3 -m venv .venv
+```
+```
+source .venv/bin/activate
+```
+```
+pip freeze > requirements.txt
+```
+
+# Commands to run after cloning repo
+```
+pip install -r requirements.txt
+```
+
