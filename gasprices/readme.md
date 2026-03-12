@@ -1,0 +1,29 @@
+dataset structure
+
+gas_prices
+Column	Type	Comment
+id	bigint Auto Increment [nextval('gas_prices_id_seq')]	
+gas_station_id	bigint	
+fuel_type	character varying(255) NULL	
+price	integer NULL	
+created_at	timestamp(0) NULL	
+updated_at	timestamp(0) NULL	
+
+gas_stations
+Column	Type	Comment
+id	bigint Auto Increment [nextval('gas_stations_id_seq')]	
+company_name	character varying(255) NULL	
+site	text NULL	
+country	character varying(255) NULL	
+city	character varying(255) NULL	
+street_name	character varying(255) NULL	
+house_number	character varying(255) NULL	
+postal_code	character varying(255) NULL	
+lat	double precision NULL	
+lng	double precision NULL	
+is_favorite	boolean [false]	
+created_at	timestamp(0) NULL	
+updated_at	timestamp(0) NULL	
+location	geometry(Point,4326) NULL	
+external_id	character varying(255) NULL	
+
