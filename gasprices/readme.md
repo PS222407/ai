@@ -40,7 +40,21 @@ pip freeze > requirements.txt
 ```
 
 # Commands to run after cloning repo
+## Prerequisites
+```
+apt install python3.13-venv
+```
+## setup local python environment
+```
+python3 -m venv .venv
+```
+```
+source .venv/bin/activate
+```
 ```
 pip install -r requirements.txt
 ```
-
+## setup postgres database
+```
+docker compose up -d
+```

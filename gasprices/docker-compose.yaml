@@ -3,7 +3,6 @@ services:
     build:
       context: ./dockorFiles
       dockerfile: Dockerfile.postgres
-    container_name: postgres
     restart: on-failure
     ports:
       - "5432:5432"
@@ -16,7 +15,6 @@ services:
   # login (system: PostgreSQL, server: postgres, username: postgres, password: postgres, database: postgres)
   adminer:
     image: adminer
-    container_name: adminer
     restart: on-failure
     ports:
       - "8082:8080"
