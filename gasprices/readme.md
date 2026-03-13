@@ -58,3 +58,13 @@ pip install -r requirements.txt
 ```
 docker compose up -d
 ```
+```
+docker cp puzzle.dump gasprices-postgres-1:. 
+```
+```
+docker exec -i gasprices-postgres-1 createdb -U postgres puzzle
+```
+```
+docker exec -i gasprices-postgres-1 pg_restore -U postgres -d puzzle < puzzle.dump
+```
+
