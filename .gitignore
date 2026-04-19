@@ -1,4 +1,5 @@
 .idea
 .venv
+model*.pkl
 sam_insect_od/df6
 sam_insect_od/sam*
