@@ -231,7 +231,7 @@ def visualize(image: np.ndarray, detections: list, output_path: str = None):
         ax.text(x, y - 6, f"#{i+1}", color="white", fontsize=9, fontweight="bold",
                 bbox=dict(facecolor=color, alpha=0.8, pad=2, edgecolor="none"))
 
-    title = f"{len(detections)} insect(s) detected" if detections else "No insects detected"
+    title = f"SAM: {len(detections)} insect(s) detected" if detections else "SAM: No insects detected"
     ax.set_title(title, fontsize=14)
     ax.axis("off")
     plt.tight_layout()

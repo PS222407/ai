@@ -1,22 +1,28 @@
 """
 insect_detection.py
 -------------------
-Detect insects using OWL-ViT (Open-Vocabulary object detection by Google).
-Pure HuggingFace — no C++ extensions, no custom CUDA ops, no build step.
+Detect insects using SAM 3 (Segment Anything Model 3) with text prompts.
+SAM 3 natively finds ALL instances of a concept from a short text phrase —
+no separate classifier, no C++ extensions, no custom CUDA ops.
 
 Install:
-    pip install torch torchvision transformers Pillow tqdm matplotlib
+    pip install torch torchvision
+    pip install git+https://github.com/huggingface/transformers.git  # SAM3 needs latest transformers
+    pip install Pillow tqdm matplotlib
+
+    Note: You need to accept the Meta license on HuggingFace before the model
+    will download. Visit https://huggingface.co/facebook/sam3 and click "Agree".
+    Then log in once with: huggingface-cli login
 
 Usage:
-    # Single image
+    # Single image with visualization
     python insect_detection.py --image photo.jpg --visualize
 
-    # Evaluate against your labeled val set (precision / recall / AP@0.5)
+    # Evaluate against your labeled val set
     python insect_detection.py --split val
 
     # Save crops for your downstream classifier
     python insect_detection.py --image photo.jpg --save-crops ./crops
-    python insect_detection.py --split val --save-crops ./crops
 """
 
 import argparse
@@ -27,26 +33,22 @@ import numpy as np
 import torch
 from PIL import Image
 from tqdm import tqdm
-from transformers import OwlViTForObjectDetection, OwlViTProcessor
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 DATASET_ROOT = "./df6"
+MODEL_NAME   = "facebook/sam3"
 
-# OWL-ViT model — "google/owlvit-base-patch32" is fast and good enough;
-# swap for "google/owlvit-large-patch14" for better accuracy at the cost of speed.
-MODEL_NAME = "google/owlvit-base-patch32"
+# Text prompt — SAM 3 finds ALL instances of this concept in the image.
+# You can make it more specific, e.g. "insect on a leaf" if you get too many
+# false positives from non-insect objects.
+TEXT_PROMPT  = "insect"
 
-# What to look for — add synonyms to boost recall
-TEXT_QUERIES = ["insect", "bug", "beetle", "fly", "dragonfly", "bee", "ant", "butterfly", "moth"]
+# Confidence threshold: raise to reduce false positives, lower to catch more insects
+SCORE_THRESHOLD = 0.50
+MASK_THRESHOLD  = 0.50
 
-# Keep detections whose score is above this threshold (0–1).
-# Lower → more detections (higher recall, more false positives)
-# Higher → fewer detections (higher precision, may miss insects)
-SCORE_THRESHOLD = 0.10
-
-# IoU threshold for NMS and evaluation matching
-NMS_IOU_THRESHOLD  = 0.50
+# IoU threshold for evaluation matching
 EVAL_IOU_THRESHOLD = 0.50
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -55,11 +57,13 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 # ── Model ─────────────────────────────────────────────────────────────────────
 
 def load_model():
-    print(f"Loading OWL-ViT ({MODEL_NAME}) on {DEVICE}...")
-    processor = OwlViTProcessor.from_pretrained(MODEL_NAME)
-    model = OwlViTForObjectDetection.from_pretrained(MODEL_NAME).to(DEVICE)
+    from transformers import Sam3Model, Sam3Processor
+    print(f"Loading SAM 3 ({MODEL_NAME}) on {DEVICE}...")
+    print("(First run will download ~3 GB of weights from HuggingFace)\n")
+    processor = Sam3Processor.from_pretrained(MODEL_NAME)
+    model = Sam3Model.from_pretrained(MODEL_NAME).to(DEVICE)
     model.eval()
-    print("Model ready.\n")
+    print("SAM 3 ready.\n")
     return processor, model
 
 
@@ -67,7 +71,7 @@ def load_model():
 
 def predict(processor, model, image_path: str):
     """
-    Run OWL-ViT on one image.
+    Run SAM 3 on one image with the text prompt.
     Returns:
         boxes  — (N, 4) float32 array of absolute (x1, y1, x2, y2) pixel coords
         scores — (N,)   float32 confidence scores
@@ -77,59 +81,29 @@ def predict(processor, model, image_path: str):
     W, H = image.size
 
     inputs = processor(
-        text=[TEXT_QUERIES],   # batch of one image, multiple text queries
         images=image,
+        text=TEXT_PROMPT,
         return_tensors="pt",
     ).to(DEVICE)
 
     with torch.no_grad():
         outputs = model(**inputs)
 
-    # Post-process: returns boxes in (cx, cy, w, h) normalised → convert to x1y1x2y2 absolute
-    target_sizes = torch.tensor([[H, W]], device=DEVICE)
-    results = processor.post_process_object_detection(
-        outputs, threshold=SCORE_THRESHOLD, target_sizes=target_sizes
+    results = processor.post_process_instance_segmentation(
+        outputs,
+        threshold=SCORE_THRESHOLD,
+        mask_threshold=MASK_THRESHOLD,
+        target_sizes=inputs.get("original_sizes").tolist(),
     )[0]
 
-    boxes  = results["boxes"].cpu().numpy().astype(np.float32)   # (N, 4) x1y1x2y2 absolute
-    scores = results["scores"].cpu().numpy().astype(np.float32)  # (N,)
-
-    if len(boxes) == 0:
+    if len(results["boxes"]) == 0:
         return np.empty((0, 4), dtype=np.float32), np.empty((0,), dtype=np.float32), (H, W)
 
-    # NMS across all query labels
-    keep = nms(boxes, scores, NMS_IOU_THRESHOLD)
-    return boxes[keep], scores[keep], (H, W)
+    boxes  = results["boxes"].cpu().numpy().astype(np.float32)
+    scores = results["scores"].cpu().numpy().astype(np.float32)
+    masks  = results["masks"]  # kept for optional use but not returned
 
-
-# ── NMS ───────────────────────────────────────────────────────────────────────
-
-def iou_matrix(boxes: np.ndarray) -> np.ndarray:
-    x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
-    areas = (x2 - x1) * (y2 - y1)
-
-    ix1 = np.maximum(x1[:, None], x1[None, :])
-    iy1 = np.maximum(y1[:, None], y1[None, :])
-    ix2 = np.minimum(x2[:, None], x2[None, :])
-    iy2 = np.minimum(y2[:, None], y2[None, :])
-    inter = np.maximum(0, ix2 - ix1) * np.maximum(0, iy2 - iy1)
-    union = areas[:, None] + areas[None, :] - inter
-    return np.where(union > 0, inter / union, 0).astype(np.float32)
-
-
-def nms(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float) -> np.ndarray:
-    order = np.argsort(-scores)
-    ious = iou_matrix(boxes)
-    keep = []
-    suppressed = set()
-    for i in order:
-        if i in suppressed:
-            continue
-        keep.append(i)
-        for j in order:
-            if j != i and j not in suppressed and ious[i, j] >= iou_threshold:
-                suppressed.add(j)
-    return np.array(keep, dtype=np.int64)
+    return boxes, scores, (H, W)
 
 
 # ── Ground truth ──────────────────────────────────────────────────────────────
@@ -220,6 +194,8 @@ def run_evaluation(processor, model, split: str = "val"):
     precision, recall, ap = compute_ap(all_scores, all_tp, all_fp, n_gt_total)
 
     metrics = {
+        "model":                MODEL_NAME,
+        "text_prompt":          TEXT_PROMPT,
         "split":                split,
         "n_images":             len(image_paths),
         "n_gt_boxes":           n_gt_total,
@@ -282,7 +258,7 @@ def run_single(processor, model, image_path: str,
             ax.text(x1, y1 - 6, f"#{i+1} {score:.2f}", color="white",
                     fontsize=9, fontweight="bold",
                     bbox=dict(facecolor=color, alpha=0.8, pad=2, edgecolor="none"))
-        title = f"OWL-ViT: {len(pred_boxes)} insect(s) detected" if len(pred_boxes) else "OWL-ViT: No insects detected"
+        title = f"SAM 3: {len(pred_boxes)} insect(s) detected" if len(pred_boxes) else "SAM 3: No insects detected"
         ax.set_title(title, fontsize=14)
         ax.axis("off")
         plt.tight_layout()
@@ -294,28 +270,29 @@ def run_single(processor, model, image_path: str,
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Insect detection with OWL-ViT")
+    p = argparse.ArgumentParser(description="Insect detection with SAM 3 text prompts")
     group = p.add_mutually_exclusive_group(required=True)
     group.add_argument("--split", choices=["train", "val"])
     group.add_argument("--image")
 
-    p.add_argument("--dataset",        default=DATASET_ROOT)
-    p.add_argument("--model",          default=MODEL_NAME)
+    p.add_argument("--dataset",         default=DATASET_ROOT)
+    p.add_argument("--prompt",          default=TEXT_PROMPT,
+                   help=f"Text concept to detect (default: '{TEXT_PROMPT}')")
     p.add_argument("--score-threshold", type=float, default=SCORE_THRESHOLD,
-                   help="Detection confidence threshold (default: 0.10)")
-    p.add_argument("--save-crops",     default=None, metavar="DIR")
-    p.add_argument("--crop-padding",   type=int, default=10)
-    p.add_argument("--output",         default=None, help="Save eval metrics to JSON")
-    p.add_argument("--visualize",      action="store_true")
+                   help="Confidence threshold (default: 0.50)")
+    p.add_argument("--save-crops",      default=None, metavar="DIR")
+    p.add_argument("--crop-padding",    type=int, default=10)
+    p.add_argument("--output",          default=None, help="Save eval metrics to JSON")
+    p.add_argument("--visualize",       action="store_true")
     return p.parse_args()
 
 
 def main():
     args = parse_args()
 
-    global DATASET_ROOT, MODEL_NAME, SCORE_THRESHOLD
+    global DATASET_ROOT, TEXT_PROMPT, SCORE_THRESHOLD
     DATASET_ROOT    = args.dataset
-    MODEL_NAME      = args.model
+    TEXT_PROMPT     = args.prompt
     SCORE_THRESHOLD = args.score_threshold
 
     processor, model = load_model()
