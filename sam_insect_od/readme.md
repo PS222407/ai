@@ -9,7 +9,7 @@ python3 sam3.py --image 2025-07-18_10-05-42-709747.jpg --visualize
 ```
 
 Conclusion
-SAM cannot classify, it only segments. You need something on top.
+SAMv1 cannot classify, it only segments. You need something on top, or samv3.
 
 Even claude said:
 Your dataset has bounding boxes already labeled, which means you don't need SAM at all. You can train a proper YOLOv8 detector directly on your data. It will learn to detect insects (class 0) and output bounding boxes natively, much cleaner than SAM + filter
