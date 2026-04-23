@@ -43,6 +43,9 @@ MASK_THRESHOLD  = 0.50
 
 EVAL_IOU_THRESHOLD = 0.50
 
+CROP_PADDING = 20      # extra pixels added on each side of a detected bounding box when saving crops
+VIS_BOX_PADDING = 20   # extra pixels added on each side of a bounding box drawn in visualizations
+
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -213,6 +216,10 @@ def make_visualization(image_path: str, pred_boxes: np.ndarray, scores: np.ndarr
     colors = plt.cm.tab10.colors
     for i, (box, score) in enumerate(zip(pred_boxes, scores)):
         x1, y1, x2, y2 = box
+        x1 -= VIS_BOX_PADDING
+        y1 -= VIS_BOX_PADDING
+        x2 += VIS_BOX_PADDING
+        y2 += VIS_BOX_PADDING
         color = colors[i % len(colors)]
         ax.add_patch(patches.Rectangle(
             (x1, y1), x2 - x1, y2 - y1,
@@ -377,7 +384,7 @@ def parse_args():
                    help="Display visualization interactively (single image only)")
     p.add_argument("--save-crops",      default=None, metavar="DIR",
                    help="Save individual insect crops here")
-    p.add_argument("--crop-padding",    type=int, default=10,
+    p.add_argument("--crop-padding",    type=int, default=CROP_PADDING,
                    help="Pixel padding around crop boxes (default: 10)")
     p.add_argument("--output",          default=None, metavar="FILE",
                    help="Save eval metrics / folder summary to a JSON file")
