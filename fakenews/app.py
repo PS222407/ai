@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import joblib
 import re
@@ -10,6 +11,13 @@ nltk.download('stopwords', quiet=True)
 nltk.download('wordnet', quiet=True)
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Load the pipeline (vectorizer + model bundled together)
 pipeline = joblib.load("pipeline_acc_98.54%.pkl")
