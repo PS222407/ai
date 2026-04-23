@@ -1,29 +1,21 @@
-"""
-insect_detection.py
--------------------
-Detect insects using SAM 3 (Segment Anything Model 3) with text prompts.
-SAM 3 natively finds ALL instances of a concept from a short text phrase —
-no separate classifier, no C++ extensions, no custom CUDA ops.
-
-Install:
-    pip install torch torchvision
-    pip install git+https://github.com/huggingface/transformers.git  # SAM3 needs latest transformers
-    pip install Pillow tqdm matplotlib
-
-    Note: You need to accept the Meta license on HuggingFace before the model
-    will download. Visit https://huggingface.co/facebook/sam3 and click "Agree".
-    Then log in once with: huggingface-cli login
-
-Usage:
-    # Single image with visualization
-    python insect_detection.py --image photo.jpg --visualize
-
-    # Evaluate against your labeled val set
-    python insect_detection.py --split val
-
-    # Save crops for your downstream classifier
-    python insect_detection.py --image photo.jpg --save-crops ./crops
-"""
+# Install:
+#     pip install torch torchvision
+#     pip install git+https://github.com/huggingface/transformers.git  # SAM3 needs latest transformers
+#     pip install Pillow tqdm matplotlib
+#
+#     You need to accept the Meta license on HuggingFace before the model will download
+#     Go to https://huggingface.co/facebook/sam3
+#     Then log in once with huggingface-cli login
+#
+# Usage:
+#     # Single image with visualization
+#     python insect_detection.py --image photo.jpg --visualize
+#
+#     # Evaluate against your labeled val set
+#     python insect_detection.py --split val
+#
+#     # Save crops for your downstream classifier
+#     python insect_detection.py --image photo.jpg --save-crops ./crops
 
 import argparse
 import json
@@ -34,32 +26,24 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-# ── Configuration ─────────────────────────────────────────────────────────────
 
 DATASET_ROOT = "./df6"
 MODEL_NAME   = "facebook/sam3"
 
-# Text prompt — SAM 3 finds ALL instances of this concept in the image.
-# You can make it more specific, e.g. "insect on a leaf" if you get too many
-# false positives from non-insect objects.
 TEXT_PROMPT  = "insect"
 
-# Confidence threshold: raise to reduce false positives, lower to catch more insects
 SCORE_THRESHOLD = 0.50
 MASK_THRESHOLD  = 0.50
 
-# IoU threshold for evaluation matching
 EVAL_IOU_THRESHOLD = 0.50
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 
-# ── Model ─────────────────────────────────────────────────────────────────────
-
 def load_model():
     from transformers import Sam3Model, Sam3Processor
     print(f"Loading SAM 3 ({MODEL_NAME}) on {DEVICE}...")
-    print("(First run will download ~3 GB of weights from HuggingFace)\n")
+    print("(First run will download about 3 GB of weights from HuggingFace)\n")
     processor = Sam3Processor.from_pretrained(MODEL_NAME)
     model = Sam3Model.from_pretrained(MODEL_NAME).to(DEVICE)
     model.eval()
@@ -67,16 +51,12 @@ def load_model():
     return processor, model
 
 
-# ── Inference ─────────────────────────────────────────────────────────────────
-
 def predict(processor, model, image_path: str):
-    """
-    Run SAM 3 on one image with the text prompt.
-    Returns:
-        boxes  — (N, 4) float32 array of absolute (x1, y1, x2, y2) pixel coords
-        scores — (N,)   float32 confidence scores
-        (H, W) — original image size
-    """
+    # Returns:
+    #  boxes  - (N, 4) float32 array of absolute (x1, y1, x2, y2) pixel coords
+    #  scores - (N,)   float32 confidence scores
+    #  (H, W) - original image size
+
     image = Image.open(image_path).convert("RGB")
     W, H = image.size
 
@@ -106,10 +86,8 @@ def predict(processor, model, image_path: str):
     return boxes, scores, (H, W)
 
 
-# ── Ground truth ──────────────────────────────────────────────────────────────
-
 def load_gt_boxes(label_path: str, H: int, W: int) -> np.ndarray:
-    """Parse YOLO-format label file → absolute (x1, y1, x2, y2)."""
+    # Parse YOLO-format label file -> absolute (x1, y1, x2, y2).
     if not Path(label_path).exists():
         return np.empty((0, 4), dtype=np.float32)
     boxes = []
@@ -126,8 +104,7 @@ def load_gt_boxes(label_path: str, H: int, W: int) -> np.ndarray:
     return np.array(boxes, dtype=np.float32) if boxes else np.empty((0, 4), dtype=np.float32)
 
 
-# ── Evaluation ────────────────────────────────────────────────────────────────
-
+# Evaluation
 def box_iou_matrix(pred: np.ndarray, gt: np.ndarray) -> np.ndarray:
     if len(pred) == 0 or len(gt) == 0:
         return np.zeros((len(pred), len(gt)), dtype=np.float32)
@@ -206,17 +183,15 @@ def run_evaluation(processor, model, split: str = "val"):
         f"AP@{EVAL_IOU_THRESHOLD}": round(ap, 4),
     }
 
-    print("\n── Evaluation Results ───────────────────────────────")
+    print("\n== Evaluation Results ===============================")
     for k, v in metrics.items():
         print(f"  {k:<26}: {v}")
-    print("─────────────────────────────────────────────────────\n")
+    print("=====================================================\n")
     return metrics
 
 
-# ── Single image ──────────────────────────────────────────────────────────────
-
-def run_single(processor, model, image_path: str,
-               visualize: bool = False, save_crops: str = None, crop_padding: int = 10):
+def run_single_image(processor, model, image_path: str,
+                     visualize: bool = False, save_crops: str = None, crop_padding: int = 10):
     pred_boxes, scores, (H, W) = predict(processor, model, image_path)
 
     print(f"\nDetections ({len(pred_boxes)}) in '{image_path}':")
@@ -267,8 +242,6 @@ def run_single(processor, model, image_path: str,
     return pred_boxes, scores
 
 
-# ── CLI ───────────────────────────────────────────────────────────────────────
-
 def parse_args():
     p = argparse.ArgumentParser(description="Insect detection with SAM 3 text prompts")
     group = p.add_mutually_exclusive_group(required=True)
@@ -304,10 +277,10 @@ def main():
                 json.dump(metrics, f, indent=2)
             print(f"Metrics saved to '{args.output}'")
     else:
-        run_single(processor, model, args.image,
-                   visualize=args.visualize,
-                   save_crops=args.save_crops,
-                   crop_padding=args.crop_padding)
+        run_single_image(processor, model, args.image,
+                         visualize=args.visualize,
+                         save_crops=args.save_crops,
+                         crop_padding=args.crop_padding)
 
 
 if __name__ == "__main__":
