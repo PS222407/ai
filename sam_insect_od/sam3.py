@@ -11,6 +11,12 @@
 #     # Single image with visualization
 #     python insect_detection.py --image photo.jpg --visualize
 #
+#     # Process a folder of images and save visualizations
+#     python insect_detection.py --image-folder ./photos --vis-folder ./results
+#
+#     # Folder with crops saved too
+#     python insect_detection.py --image-folder ./photos --vis-folder ./results --save-crops ./crops
+#
 #     # Evaluate against your labeled val set
 #     python insect_detection.py --split val
 #
@@ -36,6 +42,8 @@ SCORE_THRESHOLD = 0.50
 MASK_THRESHOLD  = 0.50
 
 EVAL_IOU_THRESHOLD = 0.50
+
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -190,8 +198,127 @@ def run_evaluation(processor, model, split: str = "val"):
     return metrics
 
 
+def make_visualization(image_path: str, pred_boxes: np.ndarray, scores: np.ndarray,
+                        save_path: str = None, show: bool = False):
+    """Render bounding boxes on the image. Saves to save_path and/or displays it."""
+    import matplotlib
+    if not show:
+        matplotlib.use("Agg")  # non-interactive backend when only saving
+    import matplotlib.pyplot as plt
+    import matplotlib.patches as patches
+
+    image_np = np.array(Image.open(image_path).convert("RGB"))
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.imshow(image_np)
+    colors = plt.cm.tab10.colors
+    for i, (box, score) in enumerate(zip(pred_boxes, scores)):
+        x1, y1, x2, y2 = box
+        color = colors[i % len(colors)]
+        ax.add_patch(patches.Rectangle(
+            (x1, y1), x2 - x1, y2 - y1,
+            linewidth=2, edgecolor=color, facecolor="none"
+        ))
+        ax.text(x1, y1 - 6, f"#{i+1} {score:.2f}", color="white",
+                fontsize=9, fontweight="bold",
+                bbox=dict(facecolor=color, alpha=0.8, pad=2, edgecolor="none"))
+    title = (f"SAM 3: {len(pred_boxes)} insect(s) detected"
+             if len(pred_boxes) else "SAM 3: No insects detected")
+    ax.set_title(title, fontsize=14)
+    ax.axis("off")
+    plt.tight_layout()
+
+    if save_path:
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    if show:
+        plt.show()
+
+    plt.close(fig)
+
+
+def run_folder(processor, model, image_folder: str, vis_folder: str = None,
+               save_crops: str = None, crop_padding: int = 10):
+    """Run detection on every image in image_folder.
+
+    Args:
+        image_folder: Path to the input folder containing images.
+        vis_folder:   If given, annotated images are saved here as JPEGs.
+        save_crops:   If given, individual insect crops are saved here.
+        crop_padding: Pixel padding around each crop box.
+    """
+    in_dir = Path(image_folder)
+    image_paths = sorted(
+        p for p in in_dir.iterdir()
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+    )
+
+    if not image_paths:
+        raise FileNotFoundError(
+            f"No supported images found in '{image_folder}'. "
+            f"Supported extensions: {IMAGE_EXTENSIONS}"
+        )
+
+    # Prepare output directories
+    if vis_folder:
+        vis_dir = Path(vis_folder)
+        vis_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Visualizations will be saved to: {vis_dir.resolve()}")
+
+    if save_crops:
+        crops_dir = Path(save_crops)
+        crops_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Crops will be saved to:          {crops_dir.resolve()}")
+
+    print(f"\nProcessing {len(image_paths)} image(s) from '{in_dir.resolve()}'...\n")
+
+    total_detections = 0
+    summary_rows = []
+
+    for img_path in tqdm(image_paths, desc="Detecting"):
+        pred_boxes, scores, (H, W) = predict(processor, model, str(img_path))
+        n = len(pred_boxes)
+        total_detections += n
+
+        tqdm.write(f"  {img_path.name}: {n} detection(s)")
+
+        # Save visualization
+        if vis_folder:
+            out_path = vis_dir / (img_path.stem + "_vis.jpg")
+            make_visualization(str(img_path), pred_boxes, scores,
+                               save_path=str(out_path), show=False)
+
+        # Save crops
+        if save_crops and n > 0:
+            image_np = np.array(Image.open(img_path).convert("RGB"))
+            for i, box in enumerate(pred_boxes):
+                x1, y1, x2, y2 = map(int, box)
+                x1c = max(0, x1 - crop_padding)
+                y1c = max(0, y1 - crop_padding)
+                x2c = min(W, x2 + crop_padding)
+                y2c = min(H, y2 + crop_padding)
+                crop_name = f"{img_path.stem}_{i+1:03d}.jpg"
+                Image.fromarray(image_np[y1c:y2c, x1c:x2c]).save(
+                    crops_dir / crop_name
+                )
+
+        summary_rows.append({
+            "image": img_path.name,
+            "detections": n,
+            "scores": [round(float(s), 4) for s in scores],
+        })
+
+    print(f"\nDone. Total detections across all images: {total_detections}")
+    if vis_folder:
+        print(f"Annotated images saved to: '{vis_folder}/'")
+    if save_crops:
+        print(f"Crops saved to:            '{save_crops}/'")
+
+    return summary_rows
+
+
 def run_single_image(processor, model, image_path: str,
-                     visualize: bool = False, save_crops: str = None, crop_padding: int = 10):
+                     visualize: bool = False, vis_folder: str = None,
+                     save_crops: str = None, crop_padding: int = 10):
     pred_boxes, scores, (H, W) = predict(processor, model, image_path)
 
     print(f"\nDetections ({len(pred_boxes)}) in '{image_path}':")
@@ -215,48 +342,54 @@ def run_single_image(processor, model, image_path: str,
             )
         print(f"Saved {len(pred_boxes)} crop(s) to '{save_crops}/'")
 
-    if visualize:
-        import matplotlib.pyplot as plt
-        import matplotlib.patches as patches
+    # Save to vis_folder if provided (non-interactive)
+    if vis_folder:
+        vis_dir = Path(vis_folder)
+        vis_dir.mkdir(parents=True, exist_ok=True)
+        out_path = vis_dir / (Path(image_path).stem + "_vis.jpg")
+        make_visualization(image_path, pred_boxes, scores,
+                           save_path=str(out_path), show=False)
+        print(f"Visualization saved to '{out_path}'")
 
-        image_np = np.array(Image.open(image_path).convert("RGB"))
-        fig, ax = plt.subplots(figsize=(12, 8))
-        ax.imshow(image_np)
-        colors = plt.cm.tab10.colors
-        for i, (box, score) in enumerate(zip(pred_boxes, scores)):
-            x1, y1, x2, y2 = box
-            color = colors[i % len(colors)]
-            ax.add_patch(patches.Rectangle(
-                (x1, y1), x2 - x1, y2 - y1,
-                linewidth=2, edgecolor=color, facecolor="none"
-            ))
-            ax.text(x1, y1 - 6, f"#{i+1} {score:.2f}", color="white",
-                    fontsize=9, fontweight="bold",
-                    bbox=dict(facecolor=color, alpha=0.8, pad=2, edgecolor="none"))
-        title = f"SAM 3: {len(pred_boxes)} insect(s) detected" if len(pred_boxes) else "SAM 3: No insects detected"
-        ax.set_title(title, fontsize=14)
-        ax.axis("off")
-        plt.tight_layout()
-        plt.show()
+    if visualize:
+        make_visualization(image_path, pred_boxes, scores, show=True)
 
     return pred_boxes, scores
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Insect detection with SAM 3 text prompts")
-    group = p.add_mutually_exclusive_group(required=True)
-    group.add_argument("--split", choices=["train", "val"])
-    group.add_argument("--image")
 
-    p.add_argument("--dataset",         default=DATASET_ROOT)
+    # --- Input mode (mutually exclusive) ---
+    input_group = p.add_mutually_exclusive_group(required=True)
+    input_group.add_argument("--split",        choices=["train", "val"],
+                             help="Evaluate a dataset split (train or val)")
+    input_group.add_argument("--image",        metavar="FILE",
+                             help="Run on a single image file")
+    input_group.add_argument("--image-folder", metavar="DIR",
+                             help="Run on all images inside a folder")
+
+    # --- Output options ---
+    p.add_argument("--vis-folder",      metavar="DIR", default=None,
+                   help="Save annotated visualizations to this folder "
+                        "(works with --image and --image-folder)")
+    p.add_argument("--visualize",       action="store_true",
+                   help="Display visualization interactively (single image only)")
+    p.add_argument("--save-crops",      default=None, metavar="DIR",
+                   help="Save individual insect crops here")
+    p.add_argument("--crop-padding",    type=int, default=10,
+                   help="Pixel padding around crop boxes (default: 10)")
+    p.add_argument("--output",          default=None, metavar="FILE",
+                   help="Save eval metrics / folder summary to a JSON file")
+
+    # --- Model / detection options ---
+    p.add_argument("--dataset",         default=DATASET_ROOT,
+                   help=f"Dataset root for --split mode (default: '{DATASET_ROOT}')")
     p.add_argument("--prompt",          default=TEXT_PROMPT,
                    help=f"Text concept to detect (default: '{TEXT_PROMPT}')")
     p.add_argument("--score-threshold", type=float, default=SCORE_THRESHOLD,
-                   help="Confidence threshold (default: 0.50)")
-    p.add_argument("--save-crops",      default=None, metavar="DIR")
-    p.add_argument("--crop-padding",    type=int, default=10)
-    p.add_argument("--output",          default=None, help="Save eval metrics to JSON")
-    p.add_argument("--visualize",       action="store_true")
+                   help=f"Confidence threshold (default: {SCORE_THRESHOLD})")
+
     return p.parse_args()
 
 
@@ -276,11 +409,28 @@ def main():
             with open(args.output, "w") as f:
                 json.dump(metrics, f, indent=2)
             print(f"Metrics saved to '{args.output}'")
-    else:
-        run_single_image(processor, model, args.image,
-                         visualize=args.visualize,
-                         save_crops=args.save_crops,
-                         crop_padding=args.crop_padding)
+
+    elif args.image_folder:
+        summary = run_folder(
+            processor, model,
+            image_folder=args.image_folder,
+            vis_folder=args.vis_folder,
+            save_crops=args.save_crops,
+            crop_padding=args.crop_padding,
+        )
+        if args.output:
+            with open(args.output, "w") as f:
+                json.dump(summary, f, indent=2)
+            print(f"Summary saved to '{args.output}'")
+
+    else:  # --image
+        run_single_image(
+            processor, model, args.image,
+            visualize=args.visualize,
+            vis_folder=args.vis_folder,
+            save_crops=args.save_crops,
+            crop_padding=args.crop_padding,
+        )
 
 
 if __name__ == "__main__":
