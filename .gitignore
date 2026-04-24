@@ -1,5 +1,10 @@
 .idea
 .venv
+__pycache__
 model*.pkl
+pipeline*.pkl
 sam_insect_od/df6
 sam_insect_od/sam*.pth
+sam_insect_od/results*
+sam_insect_od/imgs
+sam_insect_od/crops*

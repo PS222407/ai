@@ -1,9 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
+    <meta charset="UTF-8"/>
     <title>Fake News Detector</title>
     <style>
+        * {
+            box-sizing: border-box;
+        }
+
         body {
             font-family: Arial, sans-serif;
             max-width: 600px;
@@ -28,13 +32,25 @@
             padding: 10px;
             background: #f4f4f4;
         }
+
+        .banner {
+            background: yellow;
+            color: #9b9b00;
+            border-radius: .5em;
+            width: 100%;
+            padding: 1em
+        }
     </style>
 </head>
 
 <body>
 
 <h2>📰 Fake News Detector</h2>
-
+<div class="banner">
+    This AI provides an automated assessment of potential fake-news. Results are not guaranteed to
+    be accurate and should not be treated as definitive. Please verify information using trusted sources.
+</div>
+<br>
 <textarea id="textInput" placeholder="Paste news text here..." style="resize: vertical; min-height: 500px"></textarea>
 
 <br>
@@ -44,33 +60,33 @@
 <div class="result" id="resultBox"></div>
 
 <script>
-async function submitText() {
-    const text = document.getElementById("textInput").value;
+    async function submitText() {
+        const text = document.getElementById("textInput").value;
 
-    const resultBox = document.getElementById("resultBox");
-    resultBox.innerHTML = "Loading...";
+        const resultBox = document.getElementById("resultBox");
+        resultBox.innerHTML = "Loading...";
 
-    try {
-        const response = await fetch("http://127.0.0.1:8000/predict", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ text: text })
-        });
+        try {
+            const response = await fetch("http://127.0.0.1:8000/predict", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json"
+                },
+                body: JSON.stringify({text: text})
+            });
 
-        const data = await response.json();
+            const data = await response.json();
 
-        resultBox.innerHTML = `
+            resultBox.innerHTML = `
             <strong>Prediction:</strong> ${data.prediction} <br>
-            <strong>Confidence:</strong> ${data.confidence.toFixed(4)}
+            <strong>Confidence:</strong> ${Math.round(data.confidence * 100)}%
         `;
 
-    } catch (error) {
-        resultBox.innerHTML = "Error calling API.";
-        console.error(error);
+        } catch (error) {
+            resultBox.innerHTML = "Error calling API.";
+            console.error(error);
+        }
     }
-}
 </script>
 
 </body>
