@@ -14,7 +14,8 @@ pip freeze > requirements.txt
 # Commands to run after cloning repo
 ## Prerequisites
 ```
-apt install python3.13-venv
+sudo apt install python3-venv \
+    && sudo apt install uvicorn
 ```
 ## setup local python environment
 ```
@@ -27,8 +28,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 ```
-uvicorn app:app --reload
+python -m uvicorn app:app --reload
 ```
+Open index.html in your browser
 
 # Orientation questions to research
 
