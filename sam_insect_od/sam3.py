@@ -133,23 +133,24 @@ def make_visualization(image_path: str, pred_boxes: np.ndarray, scores: np.ndarr
 
 def run_folder(processor, model, image_folder: str, visualize_folder: str = None,
                save_crops: str = None, crop_padding: int = 10):
-    """Run detection on every image in image_folder.
+    """Run detection on every image in image_folder, searching recursively.
 
     Args:
-        image_folder: Path to the input folder containing images.
-        visualize_folder:   If given, annotated images are saved here as JPEGs.
+        image_folder: Path to the input folder containing images (searched recursively).
+        visualize_folder: If given, annotated images are saved here as JPEGs.
         save_crops:   If given, individual insect crops are saved here.
         crop_padding: Pixel padding around each crop box.
     """
     in_dir = Path(image_folder)
     image_paths = sorted(
-        p for p in in_dir.iterdir()
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+        p for ext in IMAGE_EXTENSIONS
+        for p in in_dir.rglob(f"*{ext}")
+        if p.is_file()
     )
 
     if not image_paths:
         raise FileNotFoundError(
-            f"No supported images found in '{image_folder}'. "
+            f"No supported images found in '{image_folder}' (searched recursively). "
             f"Supported extensions: {IMAGE_EXTENSIONS}"
         )
 
@@ -163,7 +164,7 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
         crops_dir.mkdir(parents=True, exist_ok=True)
         print(f"Crops will be saved to:          {crops_dir.resolve()}")
 
-    print(f"\nProcessing {len(image_paths)} image(s) from '{in_dir.resolve()}'...\n")
+    print(f"\nProcessing {len(image_paths)} image(s) from '{in_dir.resolve()}' (recursive)...\n")
 
     total_detections = 0
     summary_rows = []
@@ -173,30 +174,32 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
         n = len(pred_boxes)
         total_detections += n
 
-        tqdm.write(f"  {img_path.name}: {n} detection(s)")
+        rel_path = img_path.relative_to(in_dir)
+        tqdm.write(f"  {rel_path}: {n} detection(s)")
 
-        # Save visualization
+        # Save visualization — flat output folder
         if visualize_folder:
             out_path = visualize_directory / (img_path.stem + "_visual.jpg")
             make_visualization(str(img_path), pred_boxes, scores,
                                save_path=str(out_path), show=False)
 
-        # Save crops
+        # Save crops — flat output folder, prefix stem to avoid collisions
         if save_crops and n > 0:
             image_np = np.array(Image.open(img_path).convert("RGB"))
+            safe_prefix = "_".join(rel_path.parent.parts + (img_path.stem,))
             for i, box in enumerate(pred_boxes):
                 x1, y1, x2, y2 = map(int, box)
                 x1c = max(0, x1 - crop_padding)
                 y1c = max(0, y1 - crop_padding)
                 x2c = min(W, x2 + crop_padding)
                 y2c = min(H, y2 + crop_padding)
-                crop_name = f"{img_path.stem}_{i+1:03d}.jpg"
+                crop_name = f"{safe_prefix}_{i+1:03d}.jpg"
                 Image.fromarray(image_np[y1c:y2c, x1c:x2c]).save(
                     crops_dir / crop_name
                 )
 
         summary_rows.append({
-            "image": img_path.name,
+            "image": str(rel_path),
             "detections": n,
             "scores": [round(float(s), 4) for s in scores],
         })
@@ -208,7 +211,6 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
         print(f"Crops saved to:            '{save_crops}/'")
 
     return summary_rows
-
 
 def run_single_image(processor, model, image_path: str,
                      visualize: bool = False, vis_folder: str = None,
