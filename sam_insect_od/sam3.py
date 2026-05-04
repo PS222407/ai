@@ -175,18 +175,18 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
         total_detections += n
 
         rel_path = img_path.relative_to(in_dir)
+        safe_prefix = "_".join(rel_path.parent.parts + (img_path.stem,))
         tqdm.write(f"  {rel_path}: {n} detection(s)")
 
         # Save visualization — flat output folder
         if visualize_folder:
-            out_path = visualize_directory / (img_path.stem + "_visual.jpg")
+            out_path = visualize_directory / (safe_prefix + "_visual.jpg")
             make_visualization(str(img_path), pred_boxes, scores,
                                save_path=str(out_path), show=False)
 
-        # Save crops — flat output folder, prefix stem to avoid collisions
+        # Save crops — flat output folder
         if save_crops and n > 0:
             image_np = np.array(Image.open(img_path).convert("RGB"))
-            safe_prefix = "_".join(rel_path.parent.parts + (img_path.stem,))
             for i, box in enumerate(pred_boxes):
                 x1, y1, x2, y2 = map(int, box)
                 x1c = max(0, x1 - crop_padding)
