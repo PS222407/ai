@@ -37,6 +37,7 @@ SCORE_THRESHOLD = 0.50
 MASK_THRESHOLD  = 0.50
 
 EVAL_IOU_THRESHOLD = 0.50
+NMS_IOU_THRESHOLD = 0.4
 
 CROP_PADDING_PIXELS = 20
 VISUAL_BOX_PADDING_PIXELS = 20
@@ -56,6 +57,32 @@ def load_model():
     print("SAM 3 ready.\n")
     return processor, model
 
+def drop_overlapping_boxes(boxes: np.ndarray, scores: np.ndarray, iou_threshold: float = NMS_IOU_THRESHOLD) -> np.ndarray:
+    """Return indices of boxes to keep after Non-Maximum Suppression."""
+    if len(boxes) == 0:
+        return np.array([], dtype=int)
+
+    x1, y1, x2, y2 = boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3]
+    areas = (x2 - x1) * (y2 - y1)
+    order = scores.argsort()[::-1]  # highest score first
+
+    keep = []
+    while order.size > 0:
+        i = order[0]
+        keep.append(i)
+
+        # Compute IoU of this box with all remaining boxes
+        ix1 = np.maximum(x1[i], x1[order[1:]])
+        iy1 = np.maximum(y1[i], y1[order[1:]])
+        ix2 = np.minimum(x2[i], x2[order[1:]])
+        iy2 = np.minimum(y2[i], y2[order[1:]])
+
+        inter = np.maximum(0, ix2 - ix1) * np.maximum(0, iy2 - iy1)
+        iou   = inter / (areas[i] + areas[order[1:]] - inter)
+
+        order = order[1:][iou < iou_threshold]  # drop overlapping boxes
+
+    return np.array(keep, dtype=int)
 
 def predict(processor, model, image_path: str):
     image = Image.open(image_path).convert("RGB")
@@ -90,6 +117,10 @@ def predict(processor, model, image_path: str):
         (boxes[:, 2] <= W - inset) &
         (boxes[:, 3] <= H - inset)
     )
+    boxes  = boxes[keep]
+    scores = scores[keep]
+
+    keep = drop_overlapping_boxes(boxes, scores, iou_threshold=NMS_IOU_THRESHOLD)
     boxes  = boxes[keep]
     scores = scores[keep]
 
