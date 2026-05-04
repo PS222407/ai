@@ -1,0 +1,12 @@
+services:
+  insect-detector:
+    build: .
+    container_name: insect-detector
+    volumes:
+      - .:/app
+      - ./data:/app/df6
+      - ./cache:/cache
+    environment:
+      - HF_HOME=/cache/huggingface
+    stdin_open: true
+    tty: true

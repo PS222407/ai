@@ -5,7 +5,7 @@
 #
 #     You need to accept the Meta license on HuggingFace before the model will download
 #     Go to https://huggingface.co/facebook/sam3
-#     Then log in once with huggingface-cli login
+#     Then log in once with "hf auth login"
 #
 # Usage:
 #     # Single image with visualization

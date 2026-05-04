@@ -1,0 +1,13 @@
+.idea
+.venv
+__pycache__
+model*.pkl
+pipeline*.pkl
+df6
+sam*.pth
+results*
+imgs
+crops*
+cache
+T5M7_AT2
+photos

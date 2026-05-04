@@ -1,3 +1,16 @@
+```
+download from yoda (ibridges)
+pip install ibridges
+mkdir -p ~/.irods
+// paste the config ~/.irods/irods_environment.json from https://geo.yoda.uu.nl/user/data_transfer
+ibridges init
+// paste password generated from here https://geo.yoda.uu.nl/user/data_access
+ibridges pwd // to check if success
+ibridges download "irods:~/research-insect-recognizer/T5M7_AT2" .
+```
+T5M7_AT2
+
+
 examples:  
 Replace sam1.py with sam3.py and owl.py:
 ```
@@ -7,9 +20,12 @@ python3 sam3.py --image C_Users_sina8_Desktop_batch2_T5M7_AT1_2025-07-20_2025-07
 python3 sam3.py --image test_image.jpg --visualize  
 python3 sam3.py --image 2025-07-18_10-05-42-709747.jpg --visualize
 ```
-
-Conclusion
-SAMv1 cannot classify, it only segments. You need something on top, or samv3.
-
-Even claude said:
-Your dataset has bounding boxes already labeled, which means you don't need SAM at all. You can train a proper YOLOv8 detector directly on your data. It will learn to detect insects (class 0) and output bounding boxes natively, much cleaner than SAM + filter
+```commandline
+docker compose up -d
+```
+```commandline
+docker compose run insect-detector hf auth login
+```
+```commandline
+docker compose run insect-detector python sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops
+```
