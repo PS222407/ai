@@ -6,6 +6,7 @@ pipeline*.pkl
 df6
 sam*.pth
 results*
+visuals*
 imgs
 crops*
 cache
