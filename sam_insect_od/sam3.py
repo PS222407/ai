@@ -31,13 +31,15 @@ MODEL_NAME   = "facebook/sam3"
 
 TEXT_PROMPT  = "insect"
 
+DETECTION_INSET_PIXELS = 10
+
 SCORE_THRESHOLD = 0.50
 MASK_THRESHOLD  = 0.50
 
 EVAL_IOU_THRESHOLD = 0.50
 
-CROP_PADDING = 20      # extra pixels added on each side of a detected bounding box when saving crops
-VIS_BOX_PADDING = 20   # extra pixels added on each side of a bounding box drawn in visualizations
+CROP_PADDING_PIXELS = 20
+VISUAL_BOX_PADDING_PIXELS = 20
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".webp"}
 
@@ -56,11 +58,6 @@ def load_model():
 
 
 def predict(processor, model, image_path: str):
-    # Returns:
-    #  boxes  - (N, 4) float32 array of absolute (x1, y1, x2, y2) pixel coords
-    #  scores - (N,)   float32 confidence scores
-    #  (H, W) - original image size
-
     image = Image.open(image_path).convert("RGB")
     W, H = image.size
 
@@ -85,7 +82,16 @@ def predict(processor, model, image_path: str):
 
     boxes  = results["boxes"].cpu().numpy().astype(np.float32)
     scores = results["scores"].cpu().numpy().astype(np.float32)
-    masks  = results["masks"]  # kept for optional use but not returned
+
+    inset = DETECTION_INSET_PIXELS
+    keep = (
+        (boxes[:, 0] >= inset) &
+        (boxes[:, 1] >= inset) &
+        (boxes[:, 2] <= W - inset) &
+        (boxes[:, 3] <= H - inset)
+    )
+    boxes  = boxes[keep]
+    scores = scores[keep]
 
     return boxes, scores, (H, W)
 
@@ -94,20 +100,28 @@ def make_visualization(image_path: str, pred_boxes: np.ndarray, scores: np.ndarr
     """Render bounding boxes on the image. Saves to save_path and/or displays it."""
     import matplotlib
     if not show:
-        matplotlib.use("Agg")  # non-interactive backend when only saving
+        matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import matplotlib.patches as patches
 
     image_np = np.array(Image.open(image_path).convert("RGB"))
+    H, W = image_np.shape[:2]
     fig, ax = plt.subplots(figsize=(12, 8))
     ax.imshow(image_np)
+
+    inset = DETECTION_INSET_PIXELS
+    ax.add_patch(patches.Rectangle(
+        (inset, inset), W - 2 * inset, H - 2 * inset,
+        linewidth=1.5, edgecolor="red", facecolor="none", linestyle="--"
+    ))
+
     colors = plt.cm.tab10.colors
     for i, (box, score) in enumerate(zip(pred_boxes, scores)):
         x1, y1, x2, y2 = box
-        x1 -= VIS_BOX_PADDING
-        y1 -= VIS_BOX_PADDING
-        x2 += VIS_BOX_PADDING
-        y2 += VIS_BOX_PADDING
+        x1 -= VISUAL_BOX_PADDING_PIXELS
+        y1 -= VISUAL_BOX_PADDING_PIXELS
+        x2 += VISUAL_BOX_PADDING_PIXELS
+        y2 += VISUAL_BOX_PADDING_PIXELS
         color = colors[i % len(colors)]
         ax.add_patch(patches.Rectangle(
             (x1, y1), x2 - x1, y2 - y1,
@@ -271,7 +285,7 @@ def parse_args():
                    help="Display visualization interactively (single image only)")
     p.add_argument("--save-crops",      default=None, metavar="DIR",
                    help="Save individual insect crops here")
-    p.add_argument("--crop-padding",    type=int, default=CROP_PADDING,
+    p.add_argument("--crop-padding", type=int, default=CROP_PADDING_PIXELS,
                    help="Pixel padding around crop boxes (default: 10)")
     p.add_argument("--output",          default=None, metavar="FILE",
                    help="Save eval metrics / folder summary to a JSON file")
