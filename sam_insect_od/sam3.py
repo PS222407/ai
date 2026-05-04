@@ -17,11 +17,6 @@
 #     # Folder with crops saved too
 #     python insect_detection.py --image-folder ./photos --vis-folder ./results --save-crops ./crops
 #
-#     # Evaluate against your labeled val set
-#     python insect_detection.py --split val
-#
-#     # Save crops for your downstream classifier
-#     python insect_detection.py --image photo.jpg --save-crops ./crops
 
 import argparse
 import json
@@ -32,8 +27,6 @@ import torch
 from PIL import Image
 from tqdm import tqdm
 
-
-DATASET_ROOT = "./df6"
 MODEL_NAME   = "facebook/sam3"
 
 TEXT_PROMPT  = "insect"
@@ -96,111 +89,6 @@ def predict(processor, model, image_path: str):
 
     return boxes, scores, (H, W)
 
-
-def load_gt_boxes(label_path: str, H: int, W: int) -> np.ndarray:
-    # Parse YOLO-format label file -> absolute (x1, y1, x2, y2).
-    if not Path(label_path).exists():
-        return np.empty((0, 4), dtype=np.float32)
-    boxes = []
-    with open(label_path) as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) < 5:
-                continue
-            _, cx, cy, bw, bh = map(float, parts[:5])
-            boxes.append([
-                (cx - bw / 2) * W, (cy - bh / 2) * H,
-                (cx + bw / 2) * W, (cy + bh / 2) * H,
-            ])
-    return np.array(boxes, dtype=np.float32) if boxes else np.empty((0, 4), dtype=np.float32)
-
-
-# Evaluation
-def box_iou_matrix(pred: np.ndarray, gt: np.ndarray) -> np.ndarray:
-    if len(pred) == 0 or len(gt) == 0:
-        return np.zeros((len(pred), len(gt)), dtype=np.float32)
-    ix1 = np.maximum(pred[:, 0:1], gt[:, 0])
-    iy1 = np.maximum(pred[:, 1:2], gt[:, 1])
-    ix2 = np.minimum(pred[:, 2:3], gt[:, 2])
-    iy2 = np.minimum(pred[:, 3:4], gt[:, 3])
-    inter = np.maximum(0, ix2 - ix1) * np.maximum(0, iy2 - iy1)
-    area_p = (pred[:, 2] - pred[:, 0]) * (pred[:, 3] - pred[:, 1])
-    area_g = (gt[:, 2] - gt[:, 0]) * (gt[:, 3] - gt[:, 1])
-    union = area_p[:, None] + area_g[None, :] - inter
-    return np.where(union > 0, inter / union, 0).astype(np.float32)
-
-
-def compute_ap(all_scores, all_tp, all_fp, n_gt):
-    if n_gt == 0 or len(all_scores) == 0:
-        return 0.0, 0.0, 0.0
-    order = np.argsort(-np.array(all_scores))
-    tp = np.cumsum(np.array(all_tp)[order])
-    fp = np.cumsum(np.array(all_fp)[order])
-    precision = tp / (tp + fp + 1e-9)
-    recall    = tp / (n_gt + 1e-9)
-    ap = sum(
-        precision[recall >= t].max() if np.any(recall >= t) else 0.0
-        for t in np.linspace(0, 1, 11)
-    ) / 11.0
-    return float(precision[-1]), float(recall[-1]), float(ap)
-
-
-def run_evaluation(processor, model, split: str = "val"):
-    img_dir   = Path(DATASET_ROOT) / "images" / split
-    label_dir = Path(DATASET_ROOT) / "labels" / split
-
-    image_paths = sorted(img_dir.glob("*.jpg"))
-    if not image_paths:
-        raise FileNotFoundError(f"No .jpg images found in {img_dir}")
-
-    print(f"Evaluating {len(image_paths)} images ({split} split)...\n")
-
-    all_scores, all_tp, all_fp = [], [], []
-    n_gt_total = 0
-
-    for img_path in tqdm(image_paths, desc="Detecting"):
-        label_path = label_dir / (img_path.stem + ".txt")
-        pred_boxes, scores, (H, W) = predict(processor, model, str(img_path))
-        gt_boxes = load_gt_boxes(str(label_path), H, W)
-
-        n_gt_total += len(gt_boxes)
-        matched_gt = set()
-        ious = box_iou_matrix(pred_boxes, gt_boxes)
-
-        for i, score in enumerate(scores):
-            all_scores.append(float(score))
-            if len(gt_boxes) > 0:
-                best_gt = int(np.argmax(ious[i]))
-                if ious[i, best_gt] >= EVAL_IOU_THRESHOLD and best_gt not in matched_gt:
-                    all_tp.append(1); all_fp.append(0)
-                    matched_gt.add(best_gt)
-                else:
-                    all_tp.append(0); all_fp.append(1)
-            else:
-                all_tp.append(0); all_fp.append(1)
-
-    precision, recall, ap = compute_ap(all_scores, all_tp, all_fp, n_gt_total)
-
-    metrics = {
-        "model":                MODEL_NAME,
-        "text_prompt":          TEXT_PROMPT,
-        "split":                split,
-        "n_images":             len(image_paths),
-        "n_gt_boxes":           n_gt_total,
-        "score_threshold":      SCORE_THRESHOLD,
-        "eval_iou_threshold":   EVAL_IOU_THRESHOLD,
-        "precision":            round(precision, 4),
-        "recall":               round(recall, 4),
-        f"AP@{EVAL_IOU_THRESHOLD}": round(ap, 4),
-    }
-
-    print("\n== Evaluation Results ===============================")
-    for k, v in metrics.items():
-        print(f"  {k:<26}: {v}")
-    print("=====================================================\n")
-    return metrics
-
-
 def make_visualization(image_path: str, pred_boxes: np.ndarray, scores: np.ndarray,
                         save_path: str = None, show: bool = False):
     """Render bounding boxes on the image. Saves to save_path and/or displays it."""
@@ -243,13 +131,13 @@ def make_visualization(image_path: str, pred_boxes: np.ndarray, scores: np.ndarr
     plt.close(fig)
 
 
-def run_folder(processor, model, image_folder: str, vis_folder: str = None,
+def run_folder(processor, model, image_folder: str, visualize_folder: str = None,
                save_crops: str = None, crop_padding: int = 10):
     """Run detection on every image in image_folder.
 
     Args:
         image_folder: Path to the input folder containing images.
-        vis_folder:   If given, annotated images are saved here as JPEGs.
+        visualize_folder:   If given, annotated images are saved here as JPEGs.
         save_crops:   If given, individual insect crops are saved here.
         crop_padding: Pixel padding around each crop box.
     """
@@ -265,11 +153,10 @@ def run_folder(processor, model, image_folder: str, vis_folder: str = None,
             f"Supported extensions: {IMAGE_EXTENSIONS}"
         )
 
-    # Prepare output directories
-    if vis_folder:
-        vis_dir = Path(vis_folder)
-        vis_dir.mkdir(parents=True, exist_ok=True)
-        print(f"Visualizations will be saved to: {vis_dir.resolve()}")
+    if visualize_folder:
+        visualize_directory = Path(visualize_folder)
+        visualize_directory.mkdir(parents=True, exist_ok=True)
+        print(f"Visualizations will be saved to: {visualize_directory.resolve()}")
 
     if save_crops:
         crops_dir = Path(save_crops)
@@ -289,8 +176,8 @@ def run_folder(processor, model, image_folder: str, vis_folder: str = None,
         tqdm.write(f"  {img_path.name}: {n} detection(s)")
 
         # Save visualization
-        if vis_folder:
-            out_path = vis_dir / (img_path.stem + "_vis.jpg")
+        if visualize_folder:
+            out_path = visualize_directory / (img_path.stem + "_visual.jpg")
             make_visualization(str(img_path), pred_boxes, scores,
                                save_path=str(out_path), show=False)
 
@@ -315,8 +202,8 @@ def run_folder(processor, model, image_folder: str, vis_folder: str = None,
         })
 
     print(f"\nDone. Total detections across all images: {total_detections}")
-    if vis_folder:
-        print(f"Annotated images saved to: '{vis_folder}/'")
+    if visualize_folder:
+        print(f"Annotated images saved to: '{visualize_folder}/'")
     if save_crops:
         print(f"Crops saved to:            '{save_crops}/'")
 
@@ -353,7 +240,7 @@ def run_single_image(processor, model, image_path: str,
     if vis_folder:
         vis_dir = Path(vis_folder)
         vis_dir.mkdir(parents=True, exist_ok=True)
-        out_path = vis_dir / (Path(image_path).stem + "_vis.jpg")
+        out_path = vis_dir / (Path(image_path).stem + "_visual.jpg")
         make_visualization(image_path, pred_boxes, scores,
                            save_path=str(out_path), show=False)
         print(f"Visualization saved to '{out_path}'")
@@ -369,8 +256,6 @@ def parse_args():
 
     # --- Input mode (mutually exclusive) ---
     input_group = p.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--split",        choices=["train", "val"],
-                             help="Evaluate a dataset split (train or val)")
     input_group.add_argument("--image",        metavar="FILE",
                              help="Run on a single image file")
     input_group.add_argument("--image-folder", metavar="DIR",
@@ -390,8 +275,6 @@ def parse_args():
                    help="Save eval metrics / folder summary to a JSON file")
 
     # --- Model / detection options ---
-    p.add_argument("--dataset",         default=DATASET_ROOT,
-                   help=f"Dataset root for --split mode (default: '{DATASET_ROOT}')")
     p.add_argument("--prompt",          default=TEXT_PROMPT,
                    help=f"Text concept to detect (default: '{TEXT_PROMPT}')")
     p.add_argument("--score-threshold", type=float, default=SCORE_THRESHOLD,
@@ -403,25 +286,17 @@ def parse_args():
 def main():
     args = parse_args()
 
-    global DATASET_ROOT, TEXT_PROMPT, SCORE_THRESHOLD
-    DATASET_ROOT    = args.dataset
+    global TEXT_PROMPT, SCORE_THRESHOLD
     TEXT_PROMPT     = args.prompt
     SCORE_THRESHOLD = args.score_threshold
 
     processor, model = load_model()
 
-    if args.split:
-        metrics = run_evaluation(processor, model, split=args.split)
-        if args.output:
-            with open(args.output, "w") as f:
-                json.dump(metrics, f, indent=2)
-            print(f"Metrics saved to '{args.output}'")
-
-    elif args.image_folder:
+    if args.image_folder:
         summary = run_folder(
             processor, model,
             image_folder=args.image_folder,
-            vis_folder=args.vis_folder,
+            visualize_folder=args.vis_folder,
             save_crops=args.save_crops,
             crop_padding=args.crop_padding,
         )

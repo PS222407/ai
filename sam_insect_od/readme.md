@@ -1,31 +1,76 @@
+## Download dataset from Yoda using iBridges
 ```
-download from yoda (ibridges)
 pip install ibridges
+```
+```
 mkdir -p ~/.irods
-// paste the config ~/.irods/irods_environment.json from https://geo.yoda.uu.nl/user/data_transfer
+```
+Paste the config from https://geo.yoda.uu.nl/user/data_transfer to ~/.irods/irods_environment.json  
+
+Paste password generated from here https://geo.yoda.uu.nl/user/data_access after running command below
+```
 ibridges init
-// paste password generated from here https://geo.yoda.uu.nl/user/data_access
-ibridges pwd // to check if success
+```
+To check if it went successfully
+```
+ibridges pwd
+```
+And download a folder for example:
+```
 ibridges download "irods:~/research-insect-recognizer/T5M7_AT2" .
 ```
-T5M7_AT2
 
+# Installation
 
-examples:  
-Replace sam1.py with sam3.py and owl.py:
+### Using locale python environment (for development)
 ```
-python3 sam3.py --image C_Users_sina8_Desktop_batch2_T5M7_AT1_2025-07-20_2025-07-20_16-00-53_2025-07-20_16-21-02-646819.jpg --visualize  
-python3 sam3.py --image C_Users_sina8_Desktop_batch2_T5M7_AT1_2025-07-20_2025-07-20_10-00-54_2025-07-20_10-01-50-413981.jpg --visualize  
-python3 sam3.py --image C_Users_sina8_Desktop_batch2_T5M7_AT1_2025-07-20_2025-07-20_10-00-54_2025-07-20_10-02-04-560922.jpg --visualize  
-python3 sam3.py --image test_image.jpg --visualize  
-python3 sam3.py --image 2025-07-18_10-05-42-709747.jpg --visualize
+python3 -m venv .venv
 ```
+```
+source .venv/bin/activate
+```
+```
+pip install -r requirements.txt
+```
+Paste huggingface access token with Write permission after next command:
+```
+hf auth login
+```
+
+### Using docker
 ```commandline
 docker compose up -d
 ```
+Paste huggingface access token with Write permission after next command:
 ```commandline
 docker compose run insect-detector hf auth login
 ```
+Create a folder in projects root directory with photos you want to proces.
 ```commandline
 docker compose run insect-detector python sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops
+```
+
+## Available commands
+Visualize
+```
+python3 sam3.py --image test_image.jpg --visualize  
+```
+Crop and visualize
+```
+python3 sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops  
+```
+
+# Troubleshooting
+You may see an error like this:
+```
+torch.AcceleratorError: CUDA error: no kernel image is available for execution on the device
+Search for `cudaErrorNoKernelImageForDevice' in https://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__TYPES.html for more information.                                                                                                                                                                       
+CUDA kernel errors might be asynchronously reported at some other API call, so the stacktrace below might be incorrect.                                                                                                                                                                                             
+For debugging consider passing CUDA_LAUNCH_BLOCKING=1                                                                                                                                                                                                                                                               
+Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions. 
+```
+
+This is likely to happen when you have an older NVIDIA graphics card. The newer Torchvision has dropped support. Use a older Torchvision to fix:
+```
+pip install torch==2.6.0+cu118 torchvision==0.21.0+cu118 --index-url https://download.pytorch.org/whl/cu118
 ```
