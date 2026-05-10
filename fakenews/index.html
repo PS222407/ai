@@ -219,7 +219,7 @@
     </style>
 </head>
 <body>
-<h2>🔍 Fake News Detector</h2>
+<h2>Fake News Detector</h2>
 <div class="warning-banner">
     This AI provides an automated assessment of potential fake-news. Results are not guaranteed to
     be accurate and should not be treated as definitive. Please verify information using trusted sources.
@@ -231,7 +231,7 @@
 <div class="result" id="detectorResultBox"></div>
 
 <div class="quiz-section">
-    <h3>🧠 Quiz: Real or Fake?</h3>
+    <h3>Quiz: Real or Fake?</h3>
     <p class="quiz-subtitle">Read the article, make your guess, then see what the AI thinks and find out who is right.</p>
     <div class="progress-wrapper">
         <div class="progress-bar-track">
@@ -257,7 +257,9 @@
             const responseData = await response.json();
             detectorResultBox.innerHTML = `
                 <strong>Prediction:</strong> ${responseData.prediction} <br>
-                <strong>Confidence:</strong> ${Math.round(responseData.confidence * 100)}%
+                <strong>Confidence:</strong> ${Math.round(responseData.confidence * 100)}% <br><br>
+                <strong>Category Prediction:</strong> ${responseData.category_prediction} <br>
+                <strong>Category Confidence:</strong> ${Math.round(responseData.confidence * 100)}%
             `;
         } catch (error) {
             detectorResultBox.innerHTML = "Error calling API.";
@@ -318,10 +320,10 @@
 
     function shuffleArray(inputArray) {
         const arrayCopy = [...inputArray];
-        // for (let i = arrayCopy.length - 1; i > 0; i--) {
-        //     const randomIndex = Math.floor(Math.random() * (i + 1));
-        //     [arrayCopy[i], arrayCopy[randomIndex]] = [arrayCopy[randomIndex], arrayCopy[i]];
-        // }
+        for (let i = arrayCopy.length - 1; i > 0; i--) {
+            const randomIndex = Math.floor(Math.random() * (i + 1));
+            [arrayCopy[i], arrayCopy[randomIndex]] = [arrayCopy[randomIndex], arrayCopy[i]];
+        }
         return arrayCopy;
     }
 

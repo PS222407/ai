@@ -28,6 +28,9 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 ```
+pip install uvicorn
+```
+```
 python -m uvicorn app:app --reload
 ```
 Open index.html in your browser
