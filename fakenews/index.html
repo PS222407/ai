@@ -259,7 +259,9 @@
                 <strong>Prediction:</strong> ${responseData.prediction} <br>
                 <strong>Confidence:</strong> ${Math.round(responseData.confidence * 100)}% <br><br>
                 <strong>Category Prediction:</strong> ${responseData.category_prediction} <br>
-                <strong>Category Confidence:</strong> ${Math.round(responseData.confidence * 100)}%
+                <strong>Category Confidence:</strong> ${Math.round(responseData.category_confidence * 100)}% <br><br>
+                <strong>Emotion Prediction:</strong> ${responseData.emotion_prediction} <br>
+                <strong>Emotion Confidence:</strong> ${Math.round(responseData.emotion_confidence * 100)}%
             `;
         } catch (error) {
             detectorResultBox.innerHTML = "Error calling API.";

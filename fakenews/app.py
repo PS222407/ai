@@ -21,8 +21,12 @@ app.add_middleware(
 
 # Load the pipeline (vectorizer + model bundled together)
 fakenews_pipeline = joblib.load("fakenews_pipeline_acc_98.54%.pkl")
+
 category_pipeline = joblib.load("category_pipeline_acc_59.23%.pkl")
 category_label_encoder = joblib.load('category_label_encoder.pkl')
+
+emotion_pipeline = joblib.load("emotion_pipeline_acc_93.36%.pkl")
+EMOTION_MAP = {0: 'sadness', 1: 'joy', 2: 'love', 3: 'anger', 4: 'fear', 5: 'surprise'}
 
 lemmatizer = WordNetLemmatizer()
 stop_words = set(stopwords.words('english'))
@@ -45,11 +49,17 @@ def home():
 @app.post("/predict")
 def predict(news: NewsRequest):
     cleaned = preprocess_text(news.text)
+
     fakenews_prediction = fakenews_pipeline.predict([cleaned])[0]
     fakenews_probability = fakenews_pipeline.predict_proba([cleaned])[0].max()
+
     category_prediction = category_pipeline.predict([cleaned])[0]
     category_prediction_label = category_label_encoder.inverse_transform([category_prediction])[0]
     category_probability = category_pipeline.predict_proba([cleaned])[0].max()
+
+    emotion_prediction = emotion_pipeline.predict([cleaned])[0]
+    emotion_probability = emotion_pipeline.predict_proba([cleaned])[0].max()
+    emotion_prediction_label = EMOTION_MAP[emotion_prediction]
 
     label = "FAKE" if fakenews_prediction == 1 else "REAL"
 
@@ -57,5 +67,7 @@ def predict(news: NewsRequest):
         "prediction": label,
         "confidence": round(float(fakenews_probability), 4),
         "category_prediction": category_prediction_label,
-        "category_confidence": round(float(category_probability), 4)
+        "category_confidence": round(float(category_probability), 4),
+        "emotion_prediction": emotion_prediction_label,
+        "emotion_confidence": round(float(emotion_probability), 4),
     }
