@@ -9,13 +9,13 @@
 #
 # Usage:
 #     # Single image with visualization
-#     python insect_detection.py --image photo.jpg --visualize
+#     python sam3.py --image photo.jpg --visualize
 #
 #     # Process a folder of images and save visualizations
-#     python insect_detection.py --image-folder ./photos --vis-folder ./results
+#     python sam3.py --image-folder ./photos --vis-folder ./results
 #
 #     # Folder with crops saved too
-#     python insect_detection.py --image-folder ./photos --vis-folder ./results --save-crops ./crops
+#     python sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops
 #
 
 import argparse
