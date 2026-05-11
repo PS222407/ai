@@ -8,18 +8,18 @@
 #     Then log in once with "hf auth login"
 #
 # Usage:
-#     # Single image with visualization
-#     python sam3.py --image photo.jpg --visualize
-#
 #     # Process a folder of images and save visualizations
 #     python sam3.py --image-folder ./photos --vis-folder ./results
 #
 #     # Folder with crops saved too
 #     python sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops
 #
+#     # Export detections to CSV
+#     python sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops --csv results.csv
+#
 
 import argparse
-import json
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -176,8 +176,24 @@ def make_visualization(image_path: str, pred_boxes: np.ndarray, scores: np.ndarr
     plt.close(fig)
 
 
+def _image_exif_datetime(image_path: Path) -> str:
+    """Return EXIF DateTimeOriginal (or DateTimeDigitized / DateTime) as a string, or ''."""
+    try:
+        img = Image.open(image_path)
+        exif = img._getexif()  # returns None for non-JPEG or missing EXIF
+        if exif:
+            # 36867 = DateTimeOriginal, 36868 = DateTimeDigitized, 306 = DateTime
+            for tag_id in (36867, 36868, 306):
+                value = exif.get(tag_id)
+                if value:
+                    return str(value)
+    except Exception:
+        pass
+    return ""
+
+
 def run_folder(processor, model, image_folder: str, visualize_folder: str = None,
-               save_crops: str = None, crop_padding: int = 10):
+               save_crops: str = None, crop_padding: int = 10, csv_path: str = None):
     """Run detection on every image in image_folder, searching recursively.
 
     Args:
@@ -185,6 +201,7 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
         visualize_folder: If given, annotated images are saved here as JPEGs.
         save_crops:   If given, individual insect crops are saved here.
         crop_padding: Pixel padding around each crop box.
+        csv_path:     If given, a CSV with per-detection metadata is written here.
     """
     in_dir = Path(image_folder)
     image_paths = sorted(
@@ -212,7 +229,7 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
     print(f"\nProcessing {len(image_paths)} image(s) from '{in_dir.resolve()}' (recursive)...\n")
 
     total_detections = 0
-    summary_rows = []
+    csv_rows = []
 
     for img_path in tqdm(image_paths, desc="Detecting"):
         pred_boxes, scores, (H, W) = predict(processor, model, str(img_path))
@@ -223,31 +240,103 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
         safe_prefix = "_".join(rel_path.parent.parts + (img_path.stem,))
         tqdm.write(f"  {rel_path}: {n} detection(s)")
 
-        # Save visualization — flat output folder
+        # Gather metadata once per image
+        file_stat = img_path.stat()
+        file_mtime = __import__("datetime").datetime.fromtimestamp(file_stat.st_mtime).isoformat(timespec="seconds")
+        file_size_bytes = file_stat.st_size
+        exif_datetime = _image_exif_datetime(img_path)
+
+        # Save visualization flat output folder
+        vis_save_path = ""
         if visualize_folder:
             out_path = visualize_directory / (safe_prefix + "_visual.jpg")
             make_visualization(str(img_path), pred_boxes, scores,
                                save_path=str(out_path), show=False)
+            vis_save_path = str(out_path)
 
-        # Save crops — flat output folder
+        # Save crops flat output folder
+        image_np = None
         if save_crops and n > 0:
             image_np = np.array(Image.open(img_path).convert("RGB"))
-            for i, box in enumerate(pred_boxes):
-                x1, y1, x2, y2 = map(int, box)
+
+        for i, (box, score) in enumerate(zip(pred_boxes, scores)):
+            x1, y1, x2, y2 = map(int, box)
+
+            # Bounding-box derived metrics
+            box_w = x2 - x1
+            box_h = y2 - y1
+            box_area = box_w * box_h
+            image_area = H * W
+            relative_area = round(box_area / image_area, 6) if image_area > 0 else 0
+            cx = round((x1 + x2) / 2, 1)
+            cy = round((y1 + y2) / 2, 1)
+            aspect_ratio = round(box_w / box_h, 4) if box_h > 0 else 0
+
+            crop_save_path = ""
+            if save_crops and image_np is not None:
                 x1c = max(0, x1 - crop_padding)
                 y1c = max(0, y1 - crop_padding)
                 x2c = min(W, x2 + crop_padding)
                 y2c = min(H, y2 + crop_padding)
                 crop_name = f"{safe_prefix}_{i+1:03d}.jpg"
-                Image.fromarray(image_np[y1c:y2c, x1c:x2c]).save(
-                    crops_dir / crop_name
-                )
+                crop_out = crops_dir / crop_name
+                Image.fromarray(image_np[y1c:y2c, x1c:x2c]).save(crop_out)
+                crop_save_path = str(crop_out)
 
-        summary_rows.append({
-            "image": str(rel_path),
-            "detections": n,
-            "scores": [round(float(s), 4) for s in scores],
-        })
+            csv_rows.append({
+                "image_path":        str(img_path.resolve()),
+                "image_relative_path": str(rel_path),
+                "image_width_px":    W,
+                "image_height_px":   H,
+                "image_size_bytes":  file_size_bytes,
+                "image_file_mtime":  file_mtime,
+                "exif_datetime":     exif_datetime,
+                "detection_index":   i + 1,
+                "detections_in_image": n,
+                "x1":                x1,
+                "y1":                y1,
+                "x2":                x2,
+                "y2":                y2,
+                "box_width_px":      box_w,
+                "box_height_px":     box_h,
+                "box_area_px":       box_area,
+                "box_aspect_ratio":  aspect_ratio,
+                "center_x":          cx,
+                "center_y":          cy,
+                "relative_area":     relative_area,
+                "confidence":        round(float(score), 6),
+                "text_prompt":       TEXT_PROMPT,
+                "score_threshold":   SCORE_THRESHOLD,
+                "nms_iou_threshold": NMS_IOU_THRESHOLD,
+                "model":             MODEL_NAME,
+                "crop_path":         crop_save_path,
+                "visualization_path": vis_save_path,
+            })
+
+        # Emit one no-detection row so every processed image appears in the CSV
+        if n == 0:
+            csv_rows.append({
+                "image_path":        str(img_path.resolve()),
+                "image_relative_path": str(rel_path),
+                "image_width_px":    W,
+                "image_height_px":   H,
+                "image_size_bytes":  file_size_bytes,
+                "image_file_mtime":  file_mtime,
+                "exif_datetime":     exif_datetime,
+                "detection_index":   0,
+                "detections_in_image": 0,
+                "x1": "", "y1": "", "x2": "", "y2": "",
+                "box_width_px": "", "box_height_px": "", "box_area_px": "",
+                "box_aspect_ratio": "", "center_x": "", "center_y": "",
+                "relative_area": "",
+                "confidence":        "",
+                "text_prompt":       TEXT_PROMPT,
+                "score_threshold":   SCORE_THRESHOLD,
+                "nms_iou_threshold": NMS_IOU_THRESHOLD,
+                "model":             MODEL_NAME,
+                "crop_path":         "",
+                "visualization_path": vis_save_path,
+            })
 
     print(f"\nDone. Total detections across all images: {total_detections}")
     if visualize_folder:
@@ -255,71 +344,32 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
     if save_crops:
         print(f"Crops saved to:            '{save_crops}/'")
 
-    return summary_rows
+    if csv_path and csv_rows:
+        fieldnames = list(csv_rows[0].keys())
+        with open(csv_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(csv_rows)
+        print(f"CSV saved to:              '{csv_path}'")
 
-def run_single_image(processor, model, image_path: str,
-                     visualize: bool = False, vis_folder: str = None,
-                     save_crops: str = None, crop_padding: int = 10):
-    pred_boxes, scores, (H, W) = predict(processor, model, image_path)
-
-    print(f"\nDetections ({len(pred_boxes)}) in '{image_path}':")
-    for i, (box, score) in enumerate(zip(pred_boxes, scores)):
-        x1, y1, x2, y2 = box
-        print(f"  [{i+1}] x1={x1:.0f} y1={y1:.0f} x2={x2:.0f} y2={y2:.0f}  score={score:.4f}")
-
-    if save_crops and len(pred_boxes) > 0:
-        image_np = np.array(Image.open(image_path).convert("RGB"))
-        out_dir = Path(save_crops)
-        out_dir.mkdir(parents=True, exist_ok=True)
-        stem = Path(image_path).stem
-        for i, box in enumerate(pred_boxes):
-            x1, y1, x2, y2 = map(int, box)
-            x1c = max(0, x1 - crop_padding)
-            y1c = max(0, y1 - crop_padding)
-            x2c = min(W, x2 + crop_padding)
-            y2c = min(H, y2 + crop_padding)
-            Image.fromarray(image_np[y1c:y2c, x1c:x2c]).save(
-                out_dir / f"{stem}_{i+1:03d}.jpg"
-            )
-        print(f"Saved {len(pred_boxes)} crop(s) to '{save_crops}/'")
-
-    # Save to vis_folder if provided (non-interactive)
-    if vis_folder:
-        vis_dir = Path(vis_folder)
-        vis_dir.mkdir(parents=True, exist_ok=True)
-        out_path = vis_dir / (Path(image_path).stem + "_visual.jpg")
-        make_visualization(image_path, pred_boxes, scores,
-                           save_path=str(out_path), show=False)
-        print(f"Visualization saved to '{out_path}'")
-
-    if visualize:
-        make_visualization(image_path, pred_boxes, scores, show=True)
-
-    return pred_boxes, scores
+    return csv_rows
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Insect detection with SAM 3 text prompts")
 
-    # --- Input mode (mutually exclusive) ---
-    input_group = p.add_mutually_exclusive_group(required=True)
-    input_group.add_argument("--image",        metavar="FILE",
-                             help="Run on a single image file")
-    input_group.add_argument("--image-folder", metavar="DIR",
-                             help="Run on all images inside a folder")
+    p.add_argument("--image-folder", metavar="DIR", required=True,
+                   help="Run on all images inside a folder")
 
     # --- Output options ---
     p.add_argument("--vis-folder",      metavar="DIR", default=None,
-                   help="Save annotated visualizations to this folder "
-                        "(works with --image and --image-folder)")
-    p.add_argument("--visualize",       action="store_true",
-                   help="Display visualization interactively (single image only)")
+                   help="Save annotated visualizations to this folder")
     p.add_argument("--save-crops",      default=None, metavar="DIR",
                    help="Save individual insect crops here")
     p.add_argument("--crop-padding", type=int, default=CROP_PADDING_PIXELS,
                    help="Pixel padding around crop boxes (default: 10)")
-    p.add_argument("--output",          default=None, metavar="FILE",
-                   help="Save eval metrics / folder summary to a JSON file")
+    p.add_argument("--csv",             default=None, metavar="FILE",
+                   help="Save per-detection metadata to a CSV file")
 
     # --- Model / detection options ---
     p.add_argument("--prompt",          default=TEXT_PROMPT,
@@ -339,27 +389,14 @@ def main():
 
     processor, model = load_model()
 
-    if args.image_folder:
-        summary = run_folder(
-            processor, model,
-            image_folder=args.image_folder,
-            visualize_folder=args.vis_folder,
-            save_crops=args.save_crops,
-            crop_padding=args.crop_padding,
-        )
-        if args.output:
-            with open(args.output, "w") as f:
-                json.dump(summary, f, indent=2)
-            print(f"Summary saved to '{args.output}'")
-
-    else:  # --image
-        run_single_image(
-            processor, model, args.image,
-            visualize=args.visualize,
-            vis_folder=args.vis_folder,
-            save_crops=args.save_crops,
-            crop_padding=args.crop_padding,
-        )
+    run_folder(
+        processor, model,
+        image_folder=args.image_folder,
+        visualize_folder=args.vis_folder,
+        save_crops=args.save_crops,
+        crop_padding=args.crop_padding,
+        csv_path=args.csv,
+    )
 
 
 if __name__ == "__main__":
