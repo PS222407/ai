@@ -235,6 +235,7 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
 
         for i, (box, score) in enumerate(zip(pred_boxes, scores)):
             x1, y1, x2, y2 = map(int, box)
+            x1c, y1c, x2c, y2c = 0, 0, 0, 0
 
             crop_save_path = ""
             if save_crops and image_np is not None:
@@ -251,10 +252,10 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
                 "image_path": str(rel_path),
                 "detections_in_image": n,
                 "detection_index":   i + 1,
-                "x1":                x1,
-                "y1":                y1,
-                "x2":                x2,
-                "y2":                y2,
+                "x1":                x1c,
+                "y1":                y1c,
+                "x2":                x2c,
+                "y2":                y2c,
                 "confidence":        round(float(score), 6),
                 "crop_path":         crop_save_path,
                 "visualization_path": vis_save_path,
