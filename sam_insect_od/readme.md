@@ -1,3 +1,5 @@
+## This project is developed using Python3.11
+Newer versions will probably work but to minimize problems downgrade to this version!
 ## Download dataset from Yoda using iBridges
 ```
 pip install ibridges
@@ -24,7 +26,7 @@ ibridges download "irods:~/research-insect-recognizer/T5M7_AT2" .
 
 ### Using locale python environment (for development)
 ```
-python3 -m venv .venv
+python3.11 -m venv .venv
 ```
 ```
 source .venv/bin/activate
@@ -32,7 +34,13 @@ source .venv/bin/activate
 ```
 pip install -r requirements.txt
 ```
+```
+pip install torchvision
+```
 Paste huggingface access token with Write permission after next command:
+```
+sudo apt install python3-huggingface-hub
+```
 ```
 hf auth login
 ```
@@ -70,7 +78,7 @@ For debugging consider passing CUDA_LAUNCH_BLOCKING=1
 Compile with `TORCH_USE_CUDA_DSA` to enable device-side assertions. 
 ```
 
-This is likely to happen when you have an older NVIDIA graphics card. The newer Torchvision has dropped support. Use a older Torchvision to fix:
+This is likely to happen when you have an older GeForce (non-RTX) NVIDIA graphics card. The newer Torchvision has dropped support. Use a older Torchvision to fix:
 ```
 pip install torch==2.6.0+cu118 torchvision==0.21.0+cu118 --index-url https://download.pytorch.org/whl/cu118
 ```
