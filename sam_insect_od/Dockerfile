@@ -12,7 +12,7 @@ RUN pip install --upgrade pip
 RUN pip install torch torchvision
 RUN pip install git+https://github.com/huggingface/transformers.git
 RUN pip install Pillow tqdm matplotlib
-
+RUN pip install torch==2.6.0+cu118 torchvision==0.21.0+cu118 --index-url https://download.pytorch.org/whl/cu118
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .

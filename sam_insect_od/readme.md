@@ -45,7 +45,7 @@ sudo apt install python3-huggingface-hub
 hf auth login
 ```
 
-### Using docker
+### Using docker (stable but slower since it doesn't use GPU power)
 ```commandline
 docker compose up -d
 ```
@@ -61,11 +61,11 @@ docker compose run insect-detector python sam3.py --image-folder ./photos --vis-
 ## Available commands
 Visualize
 ```
-python3 sam3.py --image test_image.jpg --visualize  
+python3 sam3.py --image test_image.jpg --visualize --csv results.csv
 ```
 Crop and visualize
 ```
-python3 sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops  
+python3 sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops --csv results.csv
 ```
 
 # Troubleshooting
