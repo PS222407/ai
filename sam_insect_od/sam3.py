@@ -1,23 +1,3 @@
-# Install:
-#     pip install torch torchvision
-#     pip install git+https://github.com/huggingface/transformers.git  # SAM3 needs latest transformers
-#     pip install Pillow tqdm matplotlib
-#
-#     You need to accept the Meta license on HuggingFace before the model will download
-#     Go to https://huggingface.co/facebook/sam3
-#     Then log in once with "hf auth login"
-#
-# Usage:
-#     # Process a folder of images and save visualizations
-#     python sam3.py --image-folder ./photos --vis-folder ./results
-#
-#     # Folder with crops saved too
-#     python sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops
-#
-#     # Export detections to CSV
-#     python sam3.py --image-folder ./photos --vis-folder ./results --save-crops ./crops --csv results.csv
-#
-
 import argparse
 import csv
 from pathlib import Path
@@ -86,7 +66,7 @@ def drop_overlapping_boxes(boxes: np.ndarray, scores: np.ndarray, iou_threshold:
 
 def predict(processor, model, image_path: str):
     image = Image.open(image_path).convert("RGB")
-    W, H = image.size
+    w, h = image.size
 
     inputs = processor(
         images=image,
@@ -105,7 +85,7 @@ def predict(processor, model, image_path: str):
     )[0]
 
     if len(results["boxes"]) == 0:
-        return np.empty((0, 4), dtype=np.float32), np.empty((0,), dtype=np.float32), (H, W)
+        return np.empty((0, 4), dtype=np.float32), np.empty((0,), dtype=np.float32), (h, w)
 
     boxes  = results["boxes"].cpu().numpy().astype(np.float32)
     scores = results["scores"].cpu().numpy().astype(np.float32)
@@ -114,8 +94,8 @@ def predict(processor, model, image_path: str):
     keep = (
         (boxes[:, 0] >= inset) &
         (boxes[:, 1] >= inset) &
-        (boxes[:, 2] <= W - inset) &
-        (boxes[:, 3] <= H - inset)
+        (boxes[:, 2] <= w - inset) &
+        (boxes[:, 3] <= h - inset)
     )
     boxes  = boxes[keep]
     scores = scores[keep]
@@ -124,7 +104,7 @@ def predict(processor, model, image_path: str):
     boxes  = boxes[keep]
     scores = scores[keep]
 
-    return boxes, scores, (H, W)
+    return boxes, scores, (h, w)
 
 def make_visualization(image_path: str, pred_boxes: np.ndarray, scores: np.ndarray,
                         save_path: str = None, show: bool = False):
@@ -232,19 +212,13 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
     csv_rows = []
 
     for img_path in tqdm(image_paths, desc="Detecting"):
-        pred_boxes, scores, (H, W) = predict(processor, model, str(img_path))
+        pred_boxes, scores, (h, w) = predict(processor, model, str(img_path))
         n = len(pred_boxes)
         total_detections += n
 
         rel_path = img_path.relative_to(in_dir)
         safe_prefix = "_".join(rel_path.parent.parts + (img_path.stem,))
         tqdm.write(f"  {rel_path}: {n} detection(s)")
-
-        # Gather metadata once per image
-        file_stat = img_path.stat()
-        file_mtime = __import__("datetime").datetime.fromtimestamp(file_stat.st_mtime).isoformat(timespec="seconds")
-        file_size_bytes = file_stat.st_size
-        exif_datetime = _image_exif_datetime(img_path)
 
         # Save visualization flat output folder
         vis_save_path = ""
@@ -262,53 +236,26 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
         for i, (box, score) in enumerate(zip(pred_boxes, scores)):
             x1, y1, x2, y2 = map(int, box)
 
-            # Bounding-box derived metrics
-            box_w = x2 - x1
-            box_h = y2 - y1
-            box_area = box_w * box_h
-            image_area = H * W
-            relative_area = round(box_area / image_area, 6) if image_area > 0 else 0
-            cx = round((x1 + x2) / 2, 1)
-            cy = round((y1 + y2) / 2, 1)
-            aspect_ratio = round(box_w / box_h, 4) if box_h > 0 else 0
-
             crop_save_path = ""
             if save_crops and image_np is not None:
                 x1c = max(0, x1 - crop_padding)
                 y1c = max(0, y1 - crop_padding)
-                x2c = min(W, x2 + crop_padding)
-                y2c = min(H, y2 + crop_padding)
+                x2c = min(w, x2 + crop_padding)
+                y2c = min(h, y2 + crop_padding)
                 crop_name = f"{safe_prefix}_{i+1:03d}.jpg"
                 crop_out = crops_dir / crop_name
                 Image.fromarray(image_np[y1c:y2c, x1c:x2c]).save(crop_out)
                 crop_save_path = str(crop_out)
 
             csv_rows.append({
-                "image_path":        str(img_path.resolve()),
-                "image_relative_path": str(rel_path),
-                "image_width_px":    W,
-                "image_height_px":   H,
-                "image_size_bytes":  file_size_bytes,
-                "image_file_mtime":  file_mtime,
-                "exif_datetime":     exif_datetime,
-                "detection_index":   i + 1,
+                "image_path": str(rel_path),
                 "detections_in_image": n,
+                "detection_index":   i + 1,
                 "x1":                x1,
                 "y1":                y1,
                 "x2":                x2,
                 "y2":                y2,
-                "box_width_px":      box_w,
-                "box_height_px":     box_h,
-                "box_area_px":       box_area,
-                "box_aspect_ratio":  aspect_ratio,
-                "center_x":          cx,
-                "center_y":          cy,
-                "relative_area":     relative_area,
                 "confidence":        round(float(score), 6),
-                "text_prompt":       TEXT_PROMPT,
-                "score_threshold":   SCORE_THRESHOLD,
-                "nms_iou_threshold": NMS_IOU_THRESHOLD,
-                "model":             MODEL_NAME,
                 "crop_path":         crop_save_path,
                 "visualization_path": vis_save_path,
             })
@@ -316,24 +263,14 @@ def run_folder(processor, model, image_folder: str, visualize_folder: str = None
         # Emit one no-detection row so every processed image appears in the CSV
         if n == 0:
             csv_rows.append({
-                "image_path":        str(img_path.resolve()),
-                "image_relative_path": str(rel_path),
-                "image_width_px":    W,
-                "image_height_px":   H,
-                "image_size_bytes":  file_size_bytes,
-                "image_file_mtime":  file_mtime,
-                "exif_datetime":     exif_datetime,
-                "detection_index":   0,
+                "image_path": str(rel_path),
                 "detections_in_image": 0,
-                "x1": "", "y1": "", "x2": "", "y2": "",
-                "box_width_px": "", "box_height_px": "", "box_area_px": "",
-                "box_aspect_ratio": "", "center_x": "", "center_y": "",
-                "relative_area": "",
+                "detection_index":   0,
+                "x1": "",
+                "y1": "",
+                "x2": "",
+                "y2": "",
                 "confidence":        "",
-                "text_prompt":       TEXT_PROMPT,
-                "score_threshold":   SCORE_THRESHOLD,
-                "nms_iou_threshold": NMS_IOU_THRESHOLD,
-                "model":             MODEL_NAME,
                 "crop_path":         "",
                 "visualization_path": vis_save_path,
             })
