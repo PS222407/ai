@@ -17,7 +17,7 @@ pip freeze > requirements.txt
 sudo apt install python3-venv \
     && sudo apt install uvicorn
 ```
-## setup local python environment
+## setup local python environment (if using newer GPU)
 ```
 python3 -m venv .venv
 ```
@@ -26,6 +26,24 @@ source .venv/bin/activate
 ```
 ```
 pip install -r requirements.txt
+```
+```
+pip install uvicorn
+```
+```
+python -m uvicorn app:app --reload
+```
+Open index.html in your browser
+
+## setup local python environment (if using older GPU)
+```
+python3.11 -m venv .venv11
+```
+```
+source .venv11/bin/activate
+```
+```
+pip install -r requirements311.txt
 ```
 ```
 pip install uvicorn

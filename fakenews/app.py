@@ -20,12 +20,12 @@ app.add_middleware(
 )
 
 # Load the pipeline (vectorizer + model bundled together)
-fakenews_pipeline = joblib.load("fakenews_pipeline.pkl")
+fakenews_pipeline = joblib.load("fakenews_regr_pipeline_acc_98.54%.pkl")
 
-category_pipeline = joblib.load("category_pipeline.pkl")
-category_label_encoder = joblib.load('category_label_encoder.pkl')
+category_pipeline = joblib.load("category_regr_pipeline_acc_59.23%.pkl")
+category_label_encoder = joblib.load('category_regr_label_encoder.pkl')
 
-emotion_pipeline = joblib.load("emotion_pipeline.pkl")
+emotion_pipeline = joblib.load("emotion_regr_pipeline_acc_93.36%.pkl")
 EMOTION_MAP = {0: 'sadness', 1: 'joy', 2: 'love', 3: 'anger', 4: 'fear', 5: 'surprise'}
 
 lemmatizer = WordNetLemmatizer()
