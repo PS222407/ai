@@ -4,8 +4,8 @@ from pydantic import BaseModel
 import joblib
 import re
 import torch
+import torch.nn as nn
 import nltk
-from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from transformers import BertTokenizer, BertForSequenceClassification
 
@@ -23,12 +23,49 @@ app.add_middleware(
 # Fake news classification ===================================================
 ## Regression model ==========================================================
 # Load the pipeline (vectorizer + model bundled together)
-fakenews_pipeline = joblib.load("fakenews_regr_pipeline_acc_98.54%.pkl")
+fakenews_pipeline = joblib.load("fakenews_regr_pipeline_acc_98.59%.pkl")
 
 # Emotion classification =====================================================
 ## Regression model ==========================================================
 emotion_pipeline = joblib.load("emotion_regr_pipeline_acc_93.36%.pkl")
+## RNN model =================================================================
+emotion_word2idx = joblib.load("emotion_rnn_word2idx.pkl")
+
 EMOTION_MAP = {0: 'sadness', 1: 'joy', 2: 'love', 3: 'anger', 4: 'fear', 5: 'surprise'}
+
+class RNNClassifier(nn.Module):
+    def __init__(self, vocab_size, embed_dim, hidden_dim, num_layers, num_classes, pad_idx):
+        super(RNNClassifier, self).__init__()
+        self.embedding = nn.Embedding(vocab_size, embed_dim, padding_idx=pad_idx)
+        self.rnn = nn.LSTM(
+            input_size=embed_dim,
+            hidden_size=hidden_dim,
+            num_layers=num_layers,
+            batch_first=True,
+            bidirectional=True,
+            dropout=0.3
+        )
+        self.dropout    = nn.Dropout(0.3)
+        self.classifier = nn.Linear(hidden_dim * 2, num_classes)
+
+    def forward(self, input_ids):
+        embedded = self.dropout(self.embedding(input_ids))
+        output, (hidden, _) = self.rnn(embedded)
+        hidden_fwd = hidden[-2]
+        hidden_bwd = hidden[-1]
+        combined   = torch.cat([hidden_fwd, hidden_bwd], dim=1)
+        return self.classifier(self.dropout(combined))
+
+emotion_model = RNNClassifier(
+    vocab_size  = len(emotion_word2idx),
+    embed_dim   = 128,
+    hidden_dim  = 256,
+    num_layers  = 2,
+    num_classes = 6,
+    pad_idx     = 0
+)
+emotion_model.load_state_dict(torch.load("emotion_rnn_model_acc_94.02%.pt", map_location="cpu"))
+emotion_model.eval()
 
 # Category classification =====================================================
 ## BERT category model ========================================================
@@ -51,18 +88,17 @@ print(f"BERT loaded on {device}")
 # category_label_encoder = joblib.load('category_regr_label_encoder.pkl')
 
 lemmatizer = WordNetLemmatizer()
-stop_words = set(stopwords.words('english'))
+# stop_words = set(stopwords.words('english'))
 
 def preprocess_text(text: str) -> str:
     text = re.sub(r'[^a-zA-Z\s]', '', text)
     text = text.lower()
     tokens = text.split()
-    tokens = [word for word in tokens if word not in stop_words]
+    # tokens = [word for word in tokens if word not in stop_words]
     tokens = [lemmatizer.lemmatize(word) for word in tokens]
     return ' '.join(tokens)
 
 def predict_category_bert(text: str):
-    """Run uncleaned text through BERT and return (label, confidence)."""
     encoding = bert_tokenizer(
         text,
         max_length=BERT_MAX_LEN,
@@ -82,6 +118,21 @@ def predict_category_bert(text: str):
     label      = category_label_encoder.inverse_transform([pred_idx])[0]
     return label, confidence
 
+def predict_emotion_rnn(text: str):
+    cleaned = preprocess_text(text)
+    tokens  = cleaned.split()[:64]
+    ids     = [emotion_word2idx.get(word, 1) for word in tokens]
+    ids    += [0] * (64 - len(ids))
+    input_ids = torch.tensor([ids], dtype=torch.long)
+
+    with torch.no_grad():
+        logits = emotion_model(input_ids)
+
+    probs      = torch.softmax(logits, dim=1)
+    pred_idx   = probs.argmax(dim=1).item()
+    confidence = probs[0, pred_idx].item()
+    return EMOTION_MAP[pred_idx], confidence
+
 class NewsRequest(BaseModel):
     text: str
 
@@ -93,6 +144,7 @@ def home():
 def predict(news: NewsRequest):
     cleaned = preprocess_text(news.text)
 
+    # # Fake news regression model
     fakenews_prediction = fakenews_pipeline.predict([cleaned])[0]
     fakenews_probability = fakenews_pipeline.predict_proba([cleaned])[0].max()
 
@@ -101,12 +153,16 @@ def predict(news: NewsRequest):
     # category_prediction_label = category_label_encoder.inverse_transform([category_prediction])[0]
     # category_probability = category_pipeline.predict_proba([cleaned])[0].max()
 
-    # BERT uses the raw text — it does its own tokenization
+    # # Category BERT model
     category_prediction_label, category_probability = predict_category_bert(news.text)
 
-    emotion_prediction = emotion_pipeline.predict([cleaned])[0]
-    emotion_probability = emotion_pipeline.predict_proba([cleaned])[0].max()
-    emotion_prediction_label = EMOTION_MAP[emotion_prediction]
+    # # Emotion regression model
+    # emotion_prediction = emotion_pipeline.predict([cleaned])[0]
+    # emotion_probability = emotion_pipeline.predict_proba([cleaned])[0].max()
+    # emotion_prediction_label = EMOTION_MAP[emotion_prediction]
+
+    # # Emotion RNN model
+    emotion_prediction_label, emotion_probability = predict_emotion_rnn(news.text)
 
     label = "FAKE" if fakenews_prediction == 1 else "REAL"
 
