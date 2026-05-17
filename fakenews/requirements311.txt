@@ -1,4 +1,5 @@
 annotated-doc==0.0.4
+annotated-types==0.7.0
 anyio==4.13.0
 asttokens==3.0.1
 certifi==2026.4.22
@@ -8,6 +9,7 @@ comm==0.2.3
 debugpy==1.8.20
 decorator==5.3.0
 executing==2.2.1
+fastapi==0.136.1
 filelock==3.29.0
 fsspec==2026.4.0
 h11==0.16.0
@@ -57,6 +59,8 @@ protobuf==7.34.1
 psutil==7.2.2
 ptyprocess==0.7.0
 pure_eval==0.2.3
+pydantic==2.13.4
+pydantic_core==2.46.4
 Pygments==2.20.0
 python-dateutil==2.9.0.post0
 PyYAML==6.0.3
@@ -70,6 +74,7 @@ scipy==1.17.1
 shellingham==1.5.4
 six==1.17.0
 stack-data==0.6.3
+starlette==1.0.0
 sympy==1.14.0
 threadpoolctl==3.6.0
 tokenizers==0.22.2
@@ -82,6 +87,8 @@ traitlets==5.15.0
 transformers==5.8.1
 triton==3.3.1
 typer==0.25.1
+typing-inspection==0.4.2
 typing_extensions==4.15.0
 urllib3==2.7.0
+uvicorn==0.47.0
 wcwidth==0.7.0

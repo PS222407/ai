@@ -49,7 +49,7 @@ pip install -r requirements311.txt
 pip install uvicorn
 ```
 ```
-python -m uvicorn app:app --reload
+python -m uvicorn app:app --reload --port 8001
 ```
 Open index.html in your browser
 
