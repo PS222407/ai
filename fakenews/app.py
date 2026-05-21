@@ -27,7 +27,7 @@ fakenews_pipeline = joblib.load("fakenews_regr_pipeline_acc_98.59%.pkl")
 
 # Emotion classification =====================================================
 ## Regression model ==========================================================
-emotion_pipeline = joblib.load("emotion_regr_pipeline_acc_93.36%.pkl")
+# emotion_pipeline = joblib.load("emotion_regr_pipeline_acc_93.36%.pkl")
 ## RNN model =================================================================
 emotion_word2idx = joblib.load("emotion_rnn_word2idx.pkl")
 
