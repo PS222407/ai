@@ -52,11 +52,3 @@ pip install uvicorn
 python -m uvicorn app:app --reload --port 8001
 ```
 Open index.html in your browser
-
-# Orientation questions to research
-
-Should we combine title + text or treat them separately ?  
-Is removing stopwords helpful for transformer models ?  
-Does subject feature improve performance ?  
-
-Planning to try Logistic Regression, LSTM and BERT.  
